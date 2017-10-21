@@ -16,13 +16,19 @@ int main(int argc, char** argv)
     // Bind the socket and listen on specified port
     sockfd = config_socket(config_data);
 
+    // Loop and wait for a new connection
+    // When there's a new connection create a new child process
+    //      Close listening socket in child process address space to return control to parent process
+    //      Trigger child_handler to parse URI and send corresponding response back to client
     while(1)
     {
         // Local vars
-        int nsfd, pid;
+        int clientfd;
+        int pid;
 
-        // Accept new connections and store new file descriptoer into nsfd
-        if ((nsfd = accept(sockfd, (struct sockaddr *) &client, &client_len)) < 0) {
+        // Accept new connections and store new file descriptoer into clientfd
+        clientfd = accept(sockfd, (struct sockaddr *) &client, &client_len);
+        if (clientfd < 0) {
             perror("Could not accept: ");
             exit(-1);
         }
@@ -36,13 +42,17 @@ int main(int argc, char** argv)
         // I am the child
         if (pid == 0) {
             close(sockfd);
-            printf("Handling request in PID: %d\n", getpid());
+            printf("PID[%d] ", getpid());
+            child_handler(clientfd, &config_data);
             exit(0);
         }
 
         // I am parent
         if (pid > 0) {
-            close(nsfd);
+            // printf("PID: %d\n", getpid());
+            close(clientfd);
+
+            // Wait for change in process state and wait
             waitpid(0, NULL, WNOHANG);
         }
     }
@@ -66,8 +76,9 @@ void config_parse(struct ConfigData *config_data)
 
     // Loop through file and store relevant information into struct
     int counter = 0, fcounter = 0;
-    while (fgets (conf_line, MAX_FIELD_LEN, config_file))
+    while (fgets(conf_line, MAX_FIELD_LEN, config_file))
     {
+        // Local vars
         char *saveptr;
         char *firstptr;
 
@@ -103,16 +114,18 @@ void config_parse(struct ConfigData *config_data)
 
     printf("PORT: %d\n", config_data->port);
     printf("DIRECTORY: %s\n", config_data->root_dir);
-    printf("DEFAULT PAGES: %s\n", config_data->default_page);
+    printf("DEFAULT PAGES: %s\n\n", config_data->default_page);
 
 }
 
 
-// Remove a substring from a char array
+// Remove substring from a char array
 void remove_elt(char *og_str, const char *sub_str)
 {
     while((og_str=strstr(og_str,sub_str)))
+    {
         memmove(og_str,og_str+strlen(sub_str),1+strlen(og_str+strlen(sub_str)));
+    }
 }
 
 
@@ -129,12 +142,14 @@ int config_socket(struct ConfigData config_data)
     remote.sin_port = htons(config_data.port);
     remote.sin_addr.s_addr = INADDR_ANY;
 
-    if ((sockfd = socket(AF_INET, SOCK_STREAM, 0)) < 0) {
-        perror("Could not allocate socket: ");
+    // Create a socket of type TCP
+    sockfd = socket(AF_INET, SOCK_STREAM, 0);
+    if (sockfd < 0) {
+        perror("Could not create socket: ");
         exit(-1);
     }
 
-    // Set fast rebind socket
+    // Set socket option for fast-rebind socket
     if (setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR, &enable, sizeof(enable)) < 0)
         perror("Unable to set sock option: ");
 
@@ -149,4 +164,38 @@ int config_socket(struct ConfigData config_data)
     }
 
     return sockfd;
+}
+
+
+void child_handler(int clientfd, struct ConfigData *config_data)
+{
+    // Local Vars
+    char recv_buff[MAX_BUF_SIZE];
+    char *saveptr;
+    char *path;
+    int recv_len;
+    struct ReqParams req_params;
+
+    // Receive the data sent by client
+    recv_len = recv(clientfd, recv_buff, MAX_BUF_SIZE, 0);
+
+    // Parse the method, URI, version from header
+    path = strtok_r(recv_buff, "\n", &saveptr);
+    path = strtok_r(path, " ", &saveptr);
+    req_params.method = malloc(strlen(path));
+    strcpy(req_params.method, path);
+
+    path = strtok_r(NULL, " ", &saveptr);
+    req_params.uri = malloc(strlen(path));
+    strcpy(req_params.uri, path);
+
+    req_params.version = malloc(strlen(saveptr));
+    strcpy(req_params.version, saveptr);
+
+    printf("%s %s %s\n", req_params.method, req_params.uri, req_params.version);
+    if (strcmp(req_params.version, "HTTP/1.1")) {
+        printf("Hi mate!\n");
+    }
+
+
 }

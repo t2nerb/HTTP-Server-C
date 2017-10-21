@@ -11,7 +11,7 @@
 #define MAX_FIELD_LEN 256
 #define NTYPES 32
 #define MAX_PATH_LEN 128
-
+#define MAX_BUF_SIZE 512
 
 struct ConfigData {
     int port;
@@ -21,7 +21,13 @@ struct ConfigData {
     char http_enc[NTYPES][MAX_FIELD_LEN];
 };
 
-// Function declarations
+struct ReqParams {
+    char *uri;
+    char *version;
+    char *method;
+};
+
 void config_parse(struct ConfigData *config_data);
 void remove_elt(char *og_str, const char *sub_str);
 int config_socket(struct ConfigData config_data);
+void child_handler(int clientfd, struct ConfigData *config_data);
