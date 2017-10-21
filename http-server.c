@@ -1,10 +1,5 @@
 #include "http-server.h"
 
-// Function declarations
-void config_parse(struct ConfigData *config_data);
-void remove_elt(char *og_str, const char *sub_str);
-int config_socket(struct ConfigData config_data);
-
 
 int main(int argc, char** argv)
 {
@@ -41,10 +36,11 @@ int main(int argc, char** argv)
         // I am the child
         if (pid == 0) {
             close(sockfd);
-            printf("Hi something happened!\n");
+            printf("Handling request in PID: %d\n", getpid());
             exit(0);
         }
 
+        // I am parent
         if (pid > 0) {
             close(nsfd);
             waitpid(0, NULL, WNOHANG);
@@ -124,18 +120,23 @@ void remove_elt(char *og_str, const char *sub_str)
 int config_socket(struct ConfigData config_data)
 {
     int sockfd;
+    int enable = 1;
     struct sockaddr_in remote;
 
+    // Populate sockaddr_in struct with configuration for socket
     bzero(&remote, sizeof(remote));
     remote.sin_family = AF_INET;
     remote.sin_port = htons(config_data.port);
     remote.sin_addr.s_addr = INADDR_ANY;
-    // memset(remote.sin_zero, '\0', sizeof(remote.sin_zero));
 
     if ((sockfd = socket(AF_INET, SOCK_STREAM, 0)) < 0) {
         perror("Could not allocate socket: ");
         exit(-1);
     }
+
+    // Set fast rebind socket
+    if (setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR, &enable, sizeof(enable)) < 0)
+        perror("Unable to set sock option: ");
 
     if ((bind(sockfd, (struct sockaddr *) &remote, sizeof(struct sockaddr_in))) < 0) {
         perror("Could not bind to socket: ");

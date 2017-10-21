@@ -20,3 +20,8 @@ struct ConfigData {
     char extensions[NTYPES][MAX_FIELD_LEN];
     char http_enc[NTYPES][MAX_FIELD_LEN];
 };
+
+// Function declarations
+void config_parse(struct ConfigData *config_data);
+void remove_elt(char *og_str, const char *sub_str);
+int config_socket(struct ConfigData config_data);
