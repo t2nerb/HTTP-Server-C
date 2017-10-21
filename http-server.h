@@ -31,3 +31,4 @@ void config_parse(struct ConfigData *config_data);
 void remove_elt(char *og_str, const char *sub_str);
 int config_socket(struct ConfigData config_data);
 void child_handler(int clientfd, struct ConfigData *config_data);
+void parse_request(char *recv_buff, struct ReqParams *req_params);

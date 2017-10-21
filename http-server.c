@@ -20,7 +20,7 @@ int main(int argc, char** argv)
     // When there's a new connection create a new child process
     //      Close listening socket in child process address space to return control to parent process
     //      Trigger child_handler to parse URI and send corresponding response back to client
-    while(1)
+    for(;;)
     {
         // Local vars
         int clientfd;
@@ -158,6 +158,7 @@ int config_socket(struct ConfigData config_data)
         exit(-1);
     }
 
+    // Allow up to 4 connections on the socket
     if ((listen(sockfd, 4)) < 0) {
         perror("Could not listen: ");
         exit(-1);
@@ -167,35 +168,47 @@ int config_socket(struct ConfigData config_data)
 }
 
 
+// Primary procedure to handle all HTTP requests
 void child_handler(int clientfd, struct ConfigData *config_data)
 {
     // Local Vars
     char recv_buff[MAX_BUF_SIZE];
-    char *saveptr;
-    char *path;
     int recv_len;
     struct ReqParams req_params;
 
     // Receive the data sent by client
     recv_len = recv(clientfd, recv_buff, MAX_BUF_SIZE, 0);
 
-    // Parse the method, URI, version from header
-    path = strtok_r(recv_buff, "\n", &saveptr);
-    path = strtok_r(path, " ", &saveptr);
-    req_params.method = malloc(strlen(path));
-    strcpy(req_params.method, path);
-
-    path = strtok_r(NULL, " ", &saveptr);
-    req_params.uri = malloc(strlen(path));
-    strcpy(req_params.uri, path);
-
-    req_params.version = malloc(strlen(saveptr));
-    strcpy(req_params.version, saveptr);
-
+    // Parse the method, URI, version from request and print the fields
+    parse_request(recv_buff, &req_params);
     printf("%s %s %s\n", req_params.method, req_params.uri, req_params.version);
-    if (strcmp(req_params.version, "HTTP/1.1")) {
-        printf("Hi mate!\n");
-    }
+
+    // Error checking for URI, version and method
 
 
+}
+
+
+// Parse the request header contained in recv_buff and store into req_params
+// *** Note: Only need to parse first line containing method, URI, version
+void parse_request(char *recv_buff, struct ReqParams *req_params)
+{
+    char *token;
+    char *line;
+    char *field;
+
+    // Split lines
+    token = strtok(recv_buff,"\n");
+
+    // Only relevant information is in the first line
+    line = strdup(token);
+
+    // Parse fields delimited by space in the line
+    field = strtok(line, " ");
+    req_params->method = strdup(field);
+    field = strtok(NULL, " ");
+    req_params->uri = strdup(field);
+    field = strtok(NULL, " ");
+    req_params->version = strdup(field);
+    free(line);
 }
