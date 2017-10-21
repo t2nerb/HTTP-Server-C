@@ -168,12 +168,29 @@ int config_socket(struct ConfigData config_data)
 }
 
 
+
+// Send appropriate message to client based on req_code
+void send_to_client(int clientfd, int req_code, struct ReqParams *req_params)
+{
+    char response[1000];
+    char not_implemented[] = "HTTP/1.1 501 Not Implemented: %s\r\n"
+    "Content-Type: text/html; charset=UTF-8\r\n\r\n"
+    "<!DOCTYPE html><html><head><title>501 Not Implemented</title>"
+    "<body><h1>501 Not Implemented: %s</h1></body></html>\r\n";
+
+    snprintf(response, sizeof(response), not_implemented, req_params->uri, req_params->uri);
+    write(clientfd, response, sizeof(response));
+}
+
+
+
 // Primary procedure to handle all HTTP requests
 void child_handler(int clientfd, struct ConfigData *config_data)
 {
     // Local Vars
     char recv_buff[MAX_BUF_SIZE];
     int recv_len;
+    int req_code;
     struct ReqParams req_params;
 
     // Receive the data sent by client
@@ -184,7 +201,13 @@ void child_handler(int clientfd, struct ConfigData *config_data)
     printf("%s %s %s\n", req_params.method, req_params.uri, req_params.version);
 
     // Error checking for URI, version and method
-
+    //      (-1 = methodnotsupported, -2 = versionnotsupported, -3 = file_no_exist)
+    req_code = check_request(&req_params);
+    if (req_code < 0) {
+        send_to_client(clientfd, req_code, &req_params);
+    } else {
+        send_to_client(clientfd, req_code, &req_params);
+    }
 
 }
 
@@ -193,6 +216,7 @@ void child_handler(int clientfd, struct ConfigData *config_data)
 // *** Note: Only need to parse first line containing method, URI, version
 void parse_request(char *recv_buff, struct ReqParams *req_params)
 {
+    // Local Vars
     char *token;
     char *line;
     char *field;
@@ -211,4 +235,23 @@ void parse_request(char *recv_buff, struct ReqParams *req_params)
     field = strtok(NULL, " ");
     req_params->version = strdup(field);
     free(line);
+}
+
+
+// Check request parameters for erorrs
+//      Return -1 if method is not supported
+//      Return -2 if version is not supported
+//      Return -3 if file is not found
+int check_request(struct ReqParams *req_params)
+{
+    if(strncmp(req_params->method, "GET", 3) != 0) {
+        printf("METHOD NOT SUPPORTED: %s\n", req_params->method);
+        return -1;
+    }
+    if (strncmp(req_params->version, "HTTP/1", 6) != 0) {
+        printf("VERSION NOT SUPPORTED: %s\n", req_params->version);
+        return -2;
+    }
+
+    return 0;
 }
