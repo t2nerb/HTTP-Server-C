@@ -49,7 +49,6 @@ int main(int argc, char** argv)
 
         // I am parent
         if (pid > 0) {
-            // printf("PID: %d\n", getpid());
             close(clientfd);
 
             // Wait for change in process state and wait
@@ -132,6 +131,7 @@ void remove_elt(char *og_str, const char *sub_str)
 // Bind to socket and listen on port
 int config_socket(struct ConfigData config_data)
 {
+    // Local Vars
     int sockfd;
     int enable = 1;
     struct sockaddr_in remote;
@@ -158,7 +158,7 @@ int config_socket(struct ConfigData config_data)
         exit(-1);
     }
 
-    // Allow up to 4 connections on the socket
+    // Allow up to 4 simultaneous connections on the socket
     if ((listen(sockfd, 4)) < 0) {
         perror("Could not listen: ");
         exit(-1);
@@ -168,20 +168,20 @@ int config_socket(struct ConfigData config_data)
 }
 
 
-
 // Send appropriate message to client based on req_code
-void send_to_client(int clientfd, int req_code, struct ReqParams *req_params)
+void send_header(int clientfd, int req_code, struct ReqParams *req_params)
 {
-    char response[1000];
-    char not_implemented[] = "HTTP/1.1 501 Not Implemented: %s\r\n"
+    char response[MAX_BUF_SIZE];
+    char not_implemented[] = "HTTP/1.1 501 Not Implemented \r\n"
     "Content-Type: text/html; charset=UTF-8\r\n\r\n"
     "<!DOCTYPE html><html><head><title>501 Not Implemented</title>"
-    "<body><h1>501 Not Implemented: %s</h1></body></html>\r\n";
+    "<body>501 Implementation missing </body></html>\r\n";
+
+
 
     snprintf(response, sizeof(response), not_implemented, req_params->uri, req_params->uri);
-    write(clientfd, response, sizeof(response));
+    send(clientfd, response, sizeof(response), 0);
 }
-
 
 
 // Primary procedure to handle all HTTP requests
@@ -198,16 +198,20 @@ void child_handler(int clientfd, struct ConfigData *config_data)
 
     // Parse the method, URI, version from request and print the fields
     parse_request(recv_buff, &req_params);
-    printf("%s %s %s\n", req_params.method, req_params.uri, req_params.version);
 
     // Error checking for URI, version and method
     //      (-1 = methodnotsupported, -2 = versionnotsupported, -3 = file_no_exist)
-    req_code = check_request(&req_params);
-    if (req_code < 0) {
-        send_to_client(clientfd, req_code, &req_params);
+    req_code = check_request(&req_params, config_data);
+    if (req_code > 200) {
+        send_header(clientfd, req_code, &req_params);
+        // send error content here
     } else {
-        send_to_client(clientfd, req_code, &req_params);
+        send_header(clientfd, req_code, &req_params);
+        // Send file content here
     }
+
+    printf("%s %s %s\n", req_params.method, req_params.uri, req_params.version);
+    printf("  %d\n", req_code);
 
 }
 
@@ -227,7 +231,7 @@ void parse_request(char *recv_buff, struct ReqParams *req_params)
     // Only relevant information is in the first line
     line = strdup(token);
 
-    // Parse fields delimited by space in the line
+    // Parse the three fields delimited by space in the line
     field = strtok(line, " ");
     req_params->method = strdup(field);
     field = strtok(NULL, " ");
@@ -239,18 +243,57 @@ void parse_request(char *recv_buff, struct ReqParams *req_params)
 
 
 // Check request parameters for erorrs
-//      Return -1 if method is not supported
-//      Return -2 if version is not supported
-//      Return -3 if file is not found
-int check_request(struct ReqParams *req_params)
+//      Return 4001 if method is not supported
+//      Return 4002 if version is not supported
+//      Return 404 if file is not found
+int check_request(struct ReqParams *req_params, struct ConfigData *config_data)
 {
+    // Local Vars
+    char fpath[MAX_BUF_SIZE];
+    char *extension;
+    int supported = 0;
+
+    // Check for method, version errors
     if(strncmp(req_params->method, "GET", 3) != 0) {
-        printf("METHOD NOT SUPPORTED: %s\n", req_params->method);
-        return -1;
+        return 4001;
     }
     if (strncmp(req_params->version, "HTTP/1", 6) != 0) {
-        printf("VERSION NOT SUPPORTED: %s\n", req_params->version);
-        return -2;
+        return 4002;
+    }
+
+    // Create path with respect to root directory in config
+    strcpy(fpath, config_data->root_dir);
+    strcat(fpath, req_params->uri);
+
+    // If no filename is included, then default to index.html
+    if (strcmp(fpath, "./www/") == 0) {
+        strcat(fpath, "index.html");
+        if (access(fpath, F_OK) != -1 ) {
+            return 200;
+        } else {
+            return 404;
+        }
+    }
+
+    // If there is content in the uri, check if file in uri exists
+    else {
+        if (access(fpath, F_OK) != -1) {
+            extension = strrchr(fpath, '.');
+
+            // Check if extension is in array of supported extensions
+            for (int i = 0; i < NTYPES-1; i++) {
+                if (strcmp(extension, config_data->extensions[i]) == 0)
+                    supported = 1;
+            }
+
+            if (supported)
+                return 200;
+            else
+                return 501;
+
+        } else {
+            return 404;
+        }
     }
 
     return 0;
