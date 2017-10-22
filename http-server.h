@@ -24,6 +24,7 @@ struct ReqParams {
     char *uri;
     char *version;
     char *method;
+    char *ctype;
 };
 
 int config_socket(struct ConfigData config_data);

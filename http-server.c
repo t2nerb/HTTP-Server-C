@@ -20,7 +20,7 @@ int main(int argc, char** argv)
     // When there's a new connection create a new child process
     //      Close listening socket in child process address space to return control to parent process
     //      Trigger child_handler to parse URI and send corresponding response back to client
-    for(;;)
+    while(1)
     {
         // Local vars
         int clientfd;
@@ -57,6 +57,36 @@ int main(int argc, char** argv)
     }
 
     return 0;
+}
+
+
+// Primary procedure to handle all HTTP requests
+void child_handler(int clientfd, struct ConfigData *config_data)
+{
+    // Local Vars
+    char recv_buff[MAX_BUF_SIZE];
+    int recv_len;
+    int req_code;
+    struct ReqParams req_params;
+
+    // Receive the data sent by client
+    recv_len = recv(clientfd, recv_buff, MAX_BUF_SIZE, 0);
+
+    // Parse the method, URI, version from client request and store into struct
+    parse_request(recv_buff, &req_params);
+
+    // Produce HTTP code for the request (i.e 200, 400, 404, 501)
+    req_code = check_request(&req_params, config_data);
+
+    // Serialize and send response header
+    send_header(clientfd, req_code, &req_params, config_data);
+
+    // Send the relevant data to client
+    send_contents(clientfd, req_code, &req_params, config_data);
+
+    // Print all the good stuff
+    printf("%d %s %s %s\n", req_code, req_params.method, req_params.uri, req_params.version);
+
 }
 
 
@@ -120,16 +150,6 @@ void config_parse(struct ConfigData *config_data)
 }
 
 
-// Remove substring from a char array
-void remove_elt(char *og_str, const char *sub_str)
-{
-    while((og_str=strstr(og_str,sub_str)))
-    {
-        memmove(og_str,og_str+strlen(sub_str),1+strlen(og_str+strlen(sub_str)));
-    }
-}
-
-
 // Bind to socket and listen on port
 int config_socket(struct ConfigData config_data)
 {
@@ -170,6 +190,16 @@ int config_socket(struct ConfigData config_data)
 }
 
 
+// Remove char from a char array
+void remove_elt(char *og_str, const char *sub_str)
+{
+    while((og_str=strstr(og_str,sub_str)))
+    {
+        memmove(og_str,og_str+strlen(sub_str),1+strlen(og_str+strlen(sub_str)));
+    }
+}
+
+
 // Send message to client and serialize header according to req_code
 void send_header(int clientfd, int req_code, struct ReqParams *req_params, struct ConfigData *config_data)
 {
@@ -190,6 +220,8 @@ void send_header(int clientfd, int req_code, struct ReqParams *req_params, struc
         for (int i = 0; i < NTYPES-1; i++) {
             if (strcmp(extension, config_data->extensions[i]) == 0) endex = i;
         }
+        // printf("config_data: %s\n", config_data->http_enc[endex]);
+        // printf("req_param:   %s\n", req_params->ctype);
         snprintf(response, sizeof(response), code_200, req_params->version, config_data->http_enc[endex]);
     }
 
@@ -209,35 +241,6 @@ void send_header(int clientfd, int req_code, struct ReqParams *req_params, struc
     send(clientfd, response, strlen(response), 0);
 }
 
-
-// Primary procedure to handle all HTTP requests
-void child_handler(int clientfd, struct ConfigData *config_data)
-{
-    // Local Vars
-    char recv_buff[MAX_BUF_SIZE];
-    int recv_len;
-    int req_code;
-    struct ReqParams req_params;
-
-    // Receive the data sent by client
-    recv_len = recv(clientfd, recv_buff, MAX_BUF_SIZE, 0);
-
-    // Parse the method, URI, version from request and store into struct
-    parse_request(recv_buff, &req_params);
-
-    // Get relevant HTTP code for the request (i.e 200, 400, 404, 501)
-    req_code = check_request(&req_params, config_data);
-
-    // Serialize and send response header
-    send_header(clientfd, req_code, &req_params, config_data);
-
-    // Send the relevant data to client
-    send_contents(clientfd, req_code, &req_params, config_data);
-
-    // Print all the good stuff
-    printf("%d %s %s %s\n", req_code, req_params.method, req_params.uri, req_params.version);
-
-}
 
 
 // Send relevant data to
@@ -362,7 +365,12 @@ int check_request(struct ReqParams *req_params, struct ConfigData *config_data)
 
             // Check if extension is in the list of supported file types
             for (int i = 0; i < NTYPES-1; i++) {
-                if (strcmp(extension, config_data->extensions[i]) == 0) supported = 1;
+                if (strcmp(extension, config_data->extensions[i]) == 0) {
+                    supported = 1;
+                    // req_params->ctype = malloc(sizeof(config_data->http_enc[i])+1);
+                    // req_params->ctype = config_data->http_enc[i];
+                    // printf("ctype: %s\n", req_params->ctype);
+                }
             }
 
             return (supported) ? 200 : 501;
