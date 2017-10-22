@@ -1,8 +1,9 @@
 #include<stdio.h>
 #include<stdlib.h>
 #include<sys/socket.h>
-#include <netinet/in.h>
+#include<netinet/in.h>
 #include<sys/types.h>
+#include<sys/wait.h>
 #include<errno.h>
 #include<unistd.h>
 #include<sys/stat.h>
