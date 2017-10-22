@@ -168,19 +168,53 @@ int config_socket(struct ConfigData config_data)
 }
 
 
-// Send appropriate message to client based on req_code
-void send_header(int clientfd, int req_code, struct ReqParams *req_params)
+// Send message to client and serialize header according to req_code
+void send_header(int clientfd, int req_code, struct ReqParams *req_params, struct ConfigData *config_data)
 {
     char response[MAX_BUF_SIZE];
-    char not_implemented[] = "HTTP/1.1 501 Not Implemented \r\n"
+    char *extension;
+    int endex;
+
+    // General format for each HTTP code
+    char code_400[] = "HTTP/1.1 400 Bad Request \r\n"
     "Content-Type: text/html; charset=UTF-8\r\n\r\n"
-    "<!DOCTYPE html><html><head><title>501 Not Implemented</title>"
-    "<body>501 Implementation missing </body></html>\r\n";
+    "<html><body> Bad Request Reason: %s </body></html>\r\n";
 
+    char code_501[] = "HTTP/1.1 501 Not Implemented \r\n"
+    "Content-Type: text/html; charset=UTF-8\r\n\r\n"
+    "<html><body>501 Not Implemented: %s </body></html>\r\n";
 
+    char code_404[] = "HTTP/1.1 404 Not Found \r\n"
+    "Content-Type: text/html; charset=UTF-8\r\n\r\n"
+    "<html><body> 404 Not Found Reason URL does not exist: %s </body></html>\r\n";
 
-    snprintf(response, sizeof(response), not_implemented, req_params->uri, req_params->uri);
-    send(clientfd, response, sizeof(response), 0);
+    char code_200[] = "HTTP/1.1 200 OK\r\n"
+    "Content-Type: %s; charset=UTF-8\r\n\r\n";
+
+    // Serialize header based on req_code
+    if (req_code == 200) {
+        extension = strrchr(req_params->uri, '.');
+        for (int i = 0; i < NTYPES-1; i++) {
+            if (strcmp(extension, config_data->extensions[i]) == 0) endex = i;
+        }
+        snprintf(response, sizeof(response), code_200, config_data->http_enc[endex]);
+        printf("\n\n%s", response);
+    }
+
+    else if (req_code == 4001 || req_code == 4002) {
+        snprintf(response, sizeof(response), code_400, req_params->uri);
+    }
+
+    else if (req_code == 404) {
+        snprintf(response, sizeof(response), code_404, req_params->uri);
+    }
+
+    else if (req_code == 501) {
+        snprintf(response, sizeof(response), code_501, req_params->uri);
+    }
+
+    // Send response to client
+    send(clientfd, response, strlen(response), 0);
 }
 
 
@@ -199,16 +233,12 @@ void child_handler(int clientfd, struct ConfigData *config_data)
     // Parse the method, URI, version from request and print the fields
     parse_request(recv_buff, &req_params);
 
-    // Error checking for URI, version and method
-    //      (-1 = methodnotsupported, -2 = versionnotsupported, -3 = file_no_exist)
+    // Get relevant HTTP code for the request (i.e 200, 400, 404, 501)
     req_code = check_request(&req_params, config_data);
-    if (req_code > 200) {
-        send_header(clientfd, req_code, &req_params);
-        // send error content here
-    } else {
-        send_header(clientfd, req_code, &req_params);
-        // Send file content here
-    }
+
+    // Send response header
+    send_header(clientfd, req_code, &req_params, config_data);
+
 
     printf("%s %s %s\n", req_params.method, req_params.uri, req_params.version);
     printf("  %d\n", req_code);
@@ -281,10 +311,8 @@ int check_request(struct ReqParams *req_params, struct ConfigData *config_data)
             extension = strrchr(fpath, '.');
 
             // Check if extension is in array of supported extensions
-            for (int i = 0; i < NTYPES-1; i++) {
-                if (strcmp(extension, config_data->extensions[i]) == 0)
-                    supported = 1;
-            }
+            for (int i = 0; i < NTYPES-1; i++)
+                if (strcmp(extension, config_data->extensions[i]) == 0) supported = 1;
 
             if (supported)
                 return 200;

@@ -33,4 +33,4 @@ void config_parse(struct ConfigData *config_data);
 void remove_elt(char *og_str, const char *sub_str);
 void child_handler(int clientfd, struct ConfigData *config_data);
 void parse_request(char *recv_buff, struct ReqParams *req_params);
-void send_header(int clientfd, int req_code, struct ReqParams *req_params);
+void send_header(int clientfd, int req_code, struct ReqParams *req_params, struct ConfigData *config_data);
