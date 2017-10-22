@@ -16,6 +16,12 @@ int main(int argc, char** argv)
     // Bind the socket and listen on specified port
     sockfd = config_socket(config_data);
 
+    printf("\n******************** HTTP SERVER ***********************\n");
+    printf("* LISTENING ON PORT: %d\n", config_data.port);
+    printf("* SERVER DIRECTORY:  %s\n", config_data.root_dir);
+    printf("* DEFAULT PAGE:      %s\n", config_data.default_page);
+    printf("********************************************************\n\n");
+
     // Loop and wait for a new connection
     // When there's a new connection create a new child process
     //      Close listening socket in child process address space to return control to parent process
@@ -57,36 +63,6 @@ int main(int argc, char** argv)
     }
 
     return 0;
-}
-
-
-// Primary procedure to handle all HTTP requests
-void child_handler(int clientfd, struct ConfigData *config_data)
-{
-    // Local Vars
-    char recv_buff[MAX_BUF_SIZE];
-    int recv_len;
-    int req_code;
-    struct ReqParams req_params;
-
-    // Receive the data sent by client
-    recv_len = recv(clientfd, recv_buff, MAX_BUF_SIZE, 0);
-
-    // Parse the method, URI, version from client request and store into struct
-    parse_request(recv_buff, &req_params);
-
-    // Produce HTTP code for the request (i.e 200, 400, 404, 501)
-    req_code = check_request(&req_params, config_data);
-
-    // Serialize and send response header
-    send_header(clientfd, req_code, &req_params, config_data);
-
-    // Send the relevant data to client
-    send_contents(clientfd, req_code, &req_params, config_data);
-
-    // Print all the good stuff
-    printf("%d %s %s %s\n", req_code, req_params.method, req_params.uri, req_params.version);
-
 }
 
 
@@ -141,12 +117,6 @@ void config_parse(struct ConfigData *config_data)
     }
     fclose(config_file);
 
-    printf("\n******************** HTTP SERVER ***********************\n");
-    printf("* LISTENING ON PORT: %d\n", config_data->port);
-    printf("* SERVER DIRECTORY:  %s\n", config_data->root_dir);
-    printf("* DEFAULT PAGE:      %s\n", config_data->default_page);
-    printf("********************************************************\n\n");
-
 }
 
 
@@ -187,6 +157,39 @@ int config_socket(struct ConfigData config_data)
     }
 
     return sockfd;
+}
+
+
+// Primary procedure to handle all HTTP requests
+void child_handler(int clientfd, struct ConfigData *config_data)
+{
+    // Local Vars
+    char recv_buff[MAX_BUF_SIZE];
+    int req_code;
+    struct ReqParams req_params;
+
+    // Receive the data sent by client
+    if (recv(clientfd, recv_buff, MAX_BUF_SIZE, 0) > 0) {
+
+        // Parse the method, URI, version from client request and store into struct
+        parse_request(recv_buff, &req_params);
+
+        // Produce HTTP code for the request (i.e 200, 400, 404, 501)
+        req_code = check_request(&req_params, config_data);
+
+        // Serialize and send response header
+        send_header(clientfd, req_code, &req_params, config_data);
+
+        // Send the relevant data to client
+        send_contents(clientfd, req_code, &req_params, config_data);
+
+        // Print all the good stuff
+        printf("%d %s %s %s\n", req_code, req_params.method, req_params.uri, req_params.version);
+    }
+    else {
+        printf("No data was received!\n");
+    }
+
 }
 
 
