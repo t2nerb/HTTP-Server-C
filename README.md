@@ -21,6 +21,12 @@ To compile:
 $ make
 ```
 
+To run the server: 
+
+```bash
+$ ./http-server 
+```
+
 To cleanup: 
 
 ```bash
