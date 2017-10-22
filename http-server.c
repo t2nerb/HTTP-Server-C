@@ -77,11 +77,11 @@ void config_parse(struct ConfigData *config_data)
     int counter = 0, fcounter = 0;
     while (fgets(conf_line, MAX_FIELD_LEN, config_file))
     {
-        // Local vars
+        // Local Vars
         char *saveptr;
         char *firstptr;
 
-        // Ignore comments in configuration file
+        // Don't parse comments
         if (conf_line[0] != '#') {
             if (counter == 0) {
                 strtok_r(conf_line, " ", &saveptr);
@@ -171,25 +171,16 @@ int config_socket(struct ConfigData config_data)
 // Send message to client and serialize header according to req_code
 void send_header(int clientfd, int req_code, struct ReqParams *req_params, struct ConfigData *config_data)
 {
+    // Local Vars
     char response[MAX_BUF_SIZE];
     char *extension;
     int endex;
 
     // General format for each HTTP code
-    char code_400[] = "HTTP/1.1 400 Bad Request \r\n"
-    "Content-Type: text/html; charset=UTF-8\r\n\r\n"
-    "<html><body> Bad Request Reason: %s </body></html>\r\n";
-
-    char code_501[] = "HTTP/1.1 501 Not Implemented \r\n"
-    "Content-Type: text/html; charset=UTF-8\r\n\r\n"
-    "<html><body>501 Not Implemented: %s </body></html>\r\n";
-
-    char code_404[] = "HTTP/1.1 404 Not Found \r\n"
-    "Content-Type: text/html; charset=UTF-8\r\n\r\n"
-    "<html><body> 404 Not Found Reason URL does not exist: %s </body></html>\r\n";
-
-    char code_200[] = "HTTP/1.1 200 OK\r\n"
-    "Content-Type: %s; charset=UTF-8\r\n\r\n";
+    char code_200[] = "%s 200 OK\r\nContent-Type: %s; charset=UTF-8\r\n\r\n";
+    char code_400[] = "%s 400 Bad Request \r\nContent-Type: text/html; charset=UTF-8\r\n\r\n";
+    char code_404[] = "%s 404 Not Found \r\nContent-Type: text/html; charset=UTF-8\r\n\r\n";
+    char code_501[] = "%s 501 Not Implemented \r\nContent-Type: text/html; charset=UTF-8\r\n\r\n";
 
     // Serialize header based on req_code
     if (req_code == 200) {
@@ -197,20 +188,19 @@ void send_header(int clientfd, int req_code, struct ReqParams *req_params, struc
         for (int i = 0; i < NTYPES-1; i++) {
             if (strcmp(extension, config_data->extensions[i]) == 0) endex = i;
         }
-        snprintf(response, sizeof(response), code_200, config_data->http_enc[endex]);
-        printf("\n\n%s", response);
+        snprintf(response, sizeof(response), code_200, req_params->version, config_data->http_enc[endex]);
     }
 
     else if (req_code == 4001 || req_code == 4002) {
-        snprintf(response, sizeof(response), code_400, req_params->uri);
+        snprintf(response, sizeof(response), code_400, req_params->version, req_params->uri);
     }
 
     else if (req_code == 404) {
-        snprintf(response, sizeof(response), code_404, req_params->uri);
+        snprintf(response, sizeof(response), code_404, req_params->version, req_params->uri);
     }
 
     else if (req_code == 501) {
-        snprintf(response, sizeof(response), code_501, req_params->uri);
+        snprintf(response, sizeof(response), code_501, req_params->version, req_params->uri);
     }
 
     // Send response to client
@@ -230,7 +220,7 @@ void child_handler(int clientfd, struct ConfigData *config_data)
     // Receive the data sent by client
     recv_len = recv(clientfd, recv_buff, MAX_BUF_SIZE, 0);
 
-    // Parse the method, URI, version from request and print the fields
+    // Parse the method, URI, version from request and store into struct
     parse_request(recv_buff, &req_params);
 
     // Get relevant HTTP code for the request (i.e 200, 400, 404, 501)
@@ -239,18 +229,17 @@ void child_handler(int clientfd, struct ConfigData *config_data)
     // Serialize and send response header
     send_header(clientfd, req_code, &req_params, config_data);
 
-    if (req_code == 200)
-        send_file(clientfd, &req_params, config_data);
+    // Send the relevant data to client
+    send_contents(clientfd, req_code, &req_params, config_data);
 
-
-    printf("%s %s %s\n", req_params.method, req_params.uri, req_params.version);
-    printf("  %d\n", req_code);
+    // Print all the good stuff
+    printf("%d %s %s %s\n", req_code, req_params.method, req_params.uri, req_params.version);
 
 }
 
 
-// If response code is 200, send the file yay
-void send_file(int clientfd, struct ReqParams *req_params, struct ConfigData *config_data)
+// Send relevant data to
+void send_contents(int clientfd, int req_code, struct ReqParams *req_params, struct ConfigData *config_data)
 {
     // Local Vars
     unsigned int rbytes = 0;
@@ -258,15 +247,42 @@ void send_file(int clientfd, struct ReqParams *req_params, struct ConfigData *co
     char fpath[MAX_BUF_SIZE];
     FILE *inputfp;
 
-    // Create path with respect to root directory in config
+    // Default messages for codes (400, 404, 500, 501)
+    char code_4001[] = "<html><body> Bad Request: Unsupported protocol: %s </body></html>\r\n";
+    char code_4002[] = "<html><body> Bad Request: Bad URI: %s </body></html>\r\n";
+    char code_404[] = "<html><body> Not Found; URL does not exist: %s </body></html>\r\n";
+    char code_501[] = "<html><body>501 Not Supported: %s </body></html>\r\n";
+
+    // Create filepath with respect to root directory in config
     strcpy(fpath, config_data->root_dir);
     strcat(fpath, req_params->uri);
 
-    inputfp = fopen(fpath, "rb");
-    while(!feof(inputfp)) {
-        rbytes = fread(filebuf, 1, MAX_BUF_SIZE, inputfp);
-        send(clientfd, filebuf, rbytes, 0);
+    if (req_code == 200) {
+        inputfp = fopen(fpath, "rb");
+        while(!feof(inputfp)) {
+            rbytes = fread(filebuf, 1, MAX_BUF_SIZE, inputfp);
+            send(clientfd, filebuf, rbytes, 0);
+        }
+        fclose(inputfp);
     }
+
+    else if (req_code == 4001) {
+        snprintf(filebuf, sizeof(filebuf), code_4001, req_params->version);
+        send(clientfd, filebuf, strlen(filebuf), 0);
+    }
+    else if (req_code == 4002) {
+        snprintf(filebuf, sizeof(filebuf), code_4002, req_params->uri);
+        send(clientfd, filebuf, strlen(filebuf), 0);
+    }
+    else if (req_code == 404) {
+        snprintf(filebuf, sizeof(filebuf), code_404, fpath);
+        send(clientfd, filebuf, strlen(filebuf), 0);
+    }
+    else if(req_code == 501) {
+        snprintf(filebuf, sizeof(filebuf), code_501, fpath);
+        send(clientfd, filebuf, strlen(filebuf), 0);
+    }
+
 }
 
 
@@ -292,14 +308,23 @@ void parse_request(char *recv_buff, struct ReqParams *req_params)
     req_params->uri = strdup(field);
     field = strtok(NULL, " ");
     req_params->version = strdup(field);
+
+    // Remove first char from uri
+    memmove (req_params->uri, req_params->uri+1, strlen (req_params->uri+1) + 1);
+
+    // Ugh stupid trailing random bytes
+    req_params->version[8] = '\0';
+
     free(line);
 }
 
 
 // Check request parameters for erorrs
+//      Return 200 if file found and supported
 //      Return 4001 if method is not supported
 //      Return 4002 if version is not supported
 //      Return 404 if file is not found
+//      Return 501 if file found but not supported
 int check_request(struct ReqParams *req_params, struct ConfigData *config_data)
 {
     // Local Vars
@@ -307,10 +332,12 @@ int check_request(struct ReqParams *req_params, struct ConfigData *config_data)
     char *extension;
     int supported = 0;
 
-    // Check for method, version errors
+    // Only account for GET method
     if(strncmp(req_params->method, "GET", 3) != 0) {
         return 4001;
     }
+
+    // Only support HTTP/1.x
     if (strncmp(req_params->version, "HTTP/1", 6) != 0) {
         return 4002;
     }
@@ -319,29 +346,24 @@ int check_request(struct ReqParams *req_params, struct ConfigData *config_data)
     strcpy(fpath, config_data->root_dir);
     strcat(fpath, req_params->uri);
 
-    // If no filename is included, then default to index.html
-    if (strcmp(fpath, "./www/") == 0) {
-        strcat(fpath, "index.html");
-        if (access(fpath, F_OK) != -1 ) {
-            return 200;
-        } else {
-            return 404;
-        }
-    }
+    // If no filename is included, then set to default in ws.conf
+    if (strcmp(fpath, config_data->root_dir) == 0) {
+        strcat(fpath, config_data->default_page);
+        req_params->uri = config_data->default_page;
 
+        return (access(fpath, F_OK) != -1) ? 200 : 404;
+    }
     // If there is content in the uri, check if file in uri exists
     else {
         if (access(fpath, F_OK) != -1) {
             extension = strrchr(fpath, '.');
 
-            // Check if extension is in array of supported extensions
-            for (int i = 0; i < NTYPES-1; i++)
+            // Check if extension is in the list of supported file types
+            for (int i = 0; i < NTYPES-1; i++) {
                 if (strcmp(extension, config_data->extensions[i]) == 0) supported = 1;
+            }
 
-            if (supported)
-                return 200;
-            else
-                return 501;
+            return (supported) ? 200 : 501;
 
         } else {
             return 404;
