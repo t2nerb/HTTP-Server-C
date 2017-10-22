@@ -111,9 +111,11 @@ void config_parse(struct ConfigData *config_data)
     }
     fclose(config_file);
 
-    printf("PORT: %d\n", config_data->port);
-    printf("DIRECTORY: %s\n", config_data->root_dir);
-    printf("DEFAULT PAGES: %s\n\n", config_data->default_page);
+    printf("\n******************** HTTP SERVER ***********************\n");
+    printf("* LISTENING ON PORT: %d\n", config_data->port);
+    printf("* SERVER DIRECTORY:  %s\n", config_data->root_dir);
+    printf("* DEFAULT PAGE:      %s\n", config_data->default_page);
+    printf("********************************************************\n\n");
 
 }
 
