@@ -236,13 +236,37 @@ void child_handler(int clientfd, struct ConfigData *config_data)
     // Get relevant HTTP code for the request (i.e 200, 400, 404, 501)
     req_code = check_request(&req_params, config_data);
 
-    // Send response header
+    // Serialize and send response header
     send_header(clientfd, req_code, &req_params, config_data);
+
+    if (req_code == 200)
+        send_file(clientfd, &req_params, config_data);
 
 
     printf("%s %s %s\n", req_params.method, req_params.uri, req_params.version);
     printf("  %d\n", req_code);
 
+}
+
+
+// If response code is 200, send the file yay
+void send_file(int clientfd, struct ReqParams *req_params, struct ConfigData *config_data)
+{
+    // Local Vars
+    unsigned int rbytes = 0;
+    char filebuf[MAX_BUF_SIZE];
+    char fpath[MAX_BUF_SIZE];
+    FILE *inputfp;
+
+    // Create path with respect to root directory in config
+    strcpy(fpath, config_data->root_dir);
+    strcat(fpath, req_params->uri);
+
+    inputfp = fopen(fpath, "rb");
+    while(!feof(inputfp)) {
+        rbytes = fread(filebuf, 1, MAX_BUF_SIZE, inputfp);
+        send(clientfd, filebuf, rbytes, 0);
+    }
 }
 
 

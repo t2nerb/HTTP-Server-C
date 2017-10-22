@@ -29,6 +29,7 @@ struct ReqParams {
 
 int config_socket(struct ConfigData config_data);
 int check_request(struct ReqParams *req_params, struct ConfigData *config_data);
+void send_file(int clientfd, struct ReqParams *req_params, struct ConfigData *config_data);
 void config_parse(struct ConfigData *config_data);
 void remove_elt(char *og_str, const char *sub_str);
 void child_handler(int clientfd, struct ConfigData *config_data);
